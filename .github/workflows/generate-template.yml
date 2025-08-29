@@ -1,0 +1,74 @@
+name: Regenerate Template Repository
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+  
+  # Weekly schedule (Sundays at 2 AM UTC)
+  schedule:
+    - cron: '0 2 * * 0'
+
+env:
+  TARGET_REPO: 'Coly010/react-template'  # Update this with actual target repo
+
+permissions:
+  contents: read
+
+jobs:
+  regenerate-template:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js (if needed for generation script)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "Template Generator Bot"
+          git config --global user.email "hello@nrwl.io"
+
+      - name: Clone target repository
+        env:
+          GH_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+        run: |
+          echo "Cloning target repository: $TARGET_REPO"
+          gh repo clone ${TARGET_REPO} target-repo
+          
+      - name: Clear repository contents (preserve .git)
+        run: |
+          cd target-repo
+          # Remove all files except .git directory
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          
+      - name: Generate new content
+        run: |
+          chmod +x ./.github/scripts/generate-content.sh
+          ./.github/scripts/generate-content.sh "$(pwd)/target-repo"
+          
+      - name: Commit and push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.TARGET_REPO_TOKEN }}
+        run: |
+          cd target-repo
+          set +x
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${TARGET_REPO}.git
+          set -x
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "🤖 Regenerate repository content - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            git push origin main
+            echo "Changes pushed successfully"
+          fi
+          
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf target-repo
